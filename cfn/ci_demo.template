@@ -37,6 +37,10 @@ Parameters:
     Default: master
     Description: Name of the branch that should be deployed.
 
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: "Name of an existing EC2 KeyPair for SSH access to the instances."
+
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -70,6 +74,13 @@ Mappings:
   publicSubnetConfig:
     publicSubnet01:
       CIDR: 10.0/24
+
+  AWSRegionVirt2AMI:
+    # To find new base AMIs at any given time, visit https://aws.amazon.com/amazon-linux-ami/
+    us-east-1:
+      HVM: "ami-c481fad3"
+    us-west-2:
+      HVM: "ami-b04e92d0"
 
 Resources:
   MyVPC:
@@ -122,6 +133,8 @@ Resources:
 
   PublicRoute:
     Type: AWS::EC2::Route
+    DependsOn:
+      - AttachGateway
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: "0.0.0.0/0"
@@ -143,6 +156,8 @@ Resources:
 
   InboundPublicNAclEntry:
     Type: AWS::EC2::NetworkAclEntry
+    DependsOn:
+      - PublicNetworkAcl
     Properties:
       NetworkAclId: !Ref PublicNetworkAcl
       RuleNumber: 2000
@@ -156,6 +171,8 @@ Resources:
 
   OutboundPublicNAclEntry:
     Type: AWS::EC2::NetworkAclEntry
+    DependsOn:
+      - PublicNetworkAcl
     Properties:
       NetworkAclId: !Ref PublicNetworkAcl
       RuleNumber: 2000
@@ -169,6 +186,8 @@ Resources:
 
   publicSubnetNetworkAclAssociation01:
     Type: AWS::EC2::SubnetNetworkAclAssociation
+    DependsOn:
+      - PublicNetworkAcl
     Properties:
       SubnetId: !Ref publicSubnet01
       NetworkAclId: !Ref PublicNetworkAcl
@@ -280,6 +299,118 @@ Resources:
       Tags:
         - Key: Name
           Value: WebServerSG
+
+  WebServerBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access on port 80
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: WebServerBalancerSG
+
+  WebServerBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      CrossZone: true
+      Scheme: internet-facing
+      Subnets:
+        - !Ref publicSubnet01
+      SecurityGroups:
+        - !Ref WebServerBalancerSG
+      Listeners:
+        - LoadBalancerPort: 80
+          InstancePort: 80
+          Protocol: HTTP
+      HealthCheck:
+        HealthyThreshold: 3
+        Interval: 5
+        Target: "HTTP:80/index.html"
+        Timeout: 2
+        UnhealthyThreshold: 3
+      ConnectionDrainingPolicy:
+        Enabled: True
+        Timeout: 10
+      Tags:
+        - Key: Name
+          Value: WebServerBalancer
+
+  WebServerLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    DependsOn:
+      - WebServerSG
+    Properties:
+      AssociatePublicIpAddress: true
+      ImageId: !FindInMap [ AWSRegionVirt2AMI, !Ref "AWS::Region", "HVM" ]
+      KeyName: !Ref KeyName
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref WebServerInstanceProfile
+      SecurityGroups:
+        - !Ref WebServerSG
+      UserData:
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash -ex
+            yum update -y aws-cfn-bootstrap
+            # Update the AWS CLI to the latest version
+            yum install -y aws-cli
+
+            function error_exit
+            {
+            /opt/aws/bin/cfn-signal --exit-code 1 --region ${AWS::Region} --stack ${AWS::StackName} --resource WebServerASG
+            exit 1
+            }
+
+            # Run cfn-init to execute the ASG's AWS::CloudFormation::Init template
+            /opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource WebServerASG || error_exit "Failed to complete cfn-init"
+
+            # If all went well, signal success
+            /opt/aws/bin/cfn-signal --exit-code 0 --region ${AWS::Region} --stack ${AWS::StackName} --resource WebServerASG
+
+  WebServerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - WebServerSG
+      - WebServerBalancerSG
+    Properties:
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 2
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 15
+      LoadBalancerNames:
+        - !Ref WebServerBalancer
+      LaunchConfigurationName: !Ref WebServerLaunchConfig
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-webs-asg"
+          PropagateAtLaunch: true
+        - Key: ServerType
+          Value: "web"
+          PropagateAtLaunch: true
+      VPCZoneIdentifier:
+        - !Ref publicSubnet01
+    CreationPolicy:
+      ResourceSignal:
+        Count: 2
+        Timeout: PT30M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        PauseTime: PT30M
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        WaitOnResourceSignals: true
+    Metadata:
+      "AWS::CloudFormation::Init":
+        config:
+          commands:
+            hello:
+              command: echo hello world
 
 Outputs:
   VpcId:
