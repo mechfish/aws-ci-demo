@@ -1,0 +1,296 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  Build S3 bucket, VPC with public subnet, IGW, route tables, ACL, CodePipeline.
+
+Parameters:
+  AppName:
+    Type: String
+    Description: "Name of the application"
+    MinLength: 2
+    MaxLength: 15
+    Default: "a4tp"
+    AllowedPattern: "[a-z0-9][-. a-z0-9]*"
+    ConstraintDescription: >-
+      Must be between 2 and 15 characters long, lowercase and may
+      contain alphanumeric characters, hyphens (-), and dots (.), but
+      must start with alphanumeric.
+
+  GitHubUser:
+    Type: String
+    Default: mechfish
+    Description: Your GitHub username
+
+  GitHubToken:
+    Type: String
+    Description: >-
+      Go to https://github.com/settings/tokens to create/find a token for your account.
+
+  GitHubRepoName:
+    Type: String
+    Default: aws-ci-demo
+    Description: Name of the repository containing the application.
+
+  GitHubBranchName:
+    Type: String
+    Default: master
+    Description: Name of the branch that should be deployed.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - AppName
+      - Label:
+          default: Application Source - GitHub
+        Parameters:
+          - GitHubUser
+          - GitHubToken
+          - GitHubRepoName
+          - GitHubBranchName
+      - Label:
+          default: SSH Configuration
+        Parameters:
+          - KeyName
+
+Mappings:
+  VPCIpSpace:
+    us-east-1:
+      RANGE: 10.42
+    us-west-2:
+      RANGE: 10.43
+
+  SubnetTypeIpRanges:
+    public:
+      RANGE: 0.0/17
+
+  publicSubnetConfig:
+    publicSubnet01:
+      CIDR: 10.0/24
+
+Resources:
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub
+        - "${Ipspc}.0.0/16"
+        - { Ipspc: !FindInMap [ VPCIpSpace, !Ref "AWS::Region", "RANGE" ]}
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: AwsCiDemo-VPC
+
+  publicSubnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Sub
+        - "${Ipspc}.${SubnetConf}"
+        - Ipspc: !FindInMap [ VPCIpSpace, !Ref "AWS::Region", "RANGE" ]
+          SubnetConf: !FindInMap [ publicSubnetConfig, "publicSubnet01", "CIDR" ]
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      Tags:
+        - Key: SubnetType
+          Value: Public
+        - Key: Name
+          Value: publicSubnet01
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: AwsCiDemoIGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRTAssociation01:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicSubnet01
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicNetworkAcl:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: NetworkAcl
+
+  InboundPublicNAclEntry:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNetworkAcl
+      RuleNumber: 2000
+      Protocol: -1
+      RuleAction: allow
+      Egress: false
+      CidrBlock: "0.0.0.0/0"
+      PortRange:
+        From: 0
+        To: 65535
+
+  OutboundPublicNAclEntry:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNetworkAcl
+      RuleNumber: 2000
+      Protocol: -1
+      RuleAction: allow
+      Egress: true
+      CidrBlock: "0.0.0.0/0"
+      PortRange:
+        From: 0
+        To: 65535
+
+  publicSubnetNetworkAclAssociation01:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref publicSubnet01
+      NetworkAclId: !Ref PublicNetworkAcl
+
+  S3Bucket:
+#    DeletionPolicy: Retain
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "demo-${AWS::Region}-${AWS::AccountId}-${AppName}"
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: "AwsCiDemo-S3Bucket"
+
+  WebServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: ""
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+      Path: /
+
+  WebServerRolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: BackendRole
+      Roles:
+        - !Ref WebServerRole
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: cloudformation:DescribeStackResources
+            Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
+          - Effect: Allow
+            Action:
+              - autoscaling:Describe*
+              - autoscaling:EnterStandby
+              - autoscaling:ExitStandby
+              - autoscaling:UpdateAutoScalingGroup
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeInstanceStatus
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:Describe*
+              - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+              - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - s3:Get*
+              - s3:List*
+            Resource:
+              - !Sub "arn:aws:s3:::demo-${AWS::Region}-${AWS::AccountId}-${AppName}"
+              - !Sub "arn:aws:s3:::demo-${AWS::Region}-${AWS::AccountId}-${AppName}/*"
+
+  WebServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref WebServerRole
+
+  WebServerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access on port 80
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: udp
+          FromPort: 123 # NTP protocol
+          ToPort: 123
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: udp
+          FromPort: 9418 # Git
+          ToPort: 9418
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: icmp
+          FromPort: -1  # any ICMP port: ping, etc.
+          ToPort: -1
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: WebServerSG
+
+Outputs:
+  VpcId:
+    Value: !Ref MyVPC
+    Description: VPC ID
+  IGWId:
+    Value: !Ref InternetGateway
+    Description: Internet Gateway ID
+  PublicSubnetA:
+    Value: !Ref publicSubnet01
+    Description: Public subnet in AZ A
+  ApplicationSource:
+    Value: !Sub "https://github.com/${GitHubUser}/${GitHubRepoName}/tree/${GitHubBranchName}"
+    Description: Location of the app source code.
