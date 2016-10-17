@@ -24,6 +24,7 @@ provision:
 	@echo "Waiting for stack $(STACK_NAME) to reach CREATE_COMPLETE status"
 	@echo "Visit https://console.aws.amazon.com/cloudformation/home to monitor the stack event stream."
 	@aws cloudformation wait stack-create-complete --stack-name $(STACK_NAME)
+	@aws cloudformation describe-stacks --stack-name $(STACK_NAME)
 
 update-ci:
 	test -n "$(GITHUB_OAUTH_TOKEN)" # you must set $$GITHUB_OAUTH_TOKEN before running this script
@@ -41,6 +42,7 @@ update-ci:
 	@echo "Waiting for stack $(STACK_NAME) to reach UPDATE_COMPLETE status"
 	@echo "Visit https://console.aws.amazon.com/cloudformation/home to monitor the stack event stream."
 	@aws cloudformation wait stack-update-complete --stack-name $(STACK_NAME)
+	@aws cloudformation describe-stacks --stack-name $(STACK_NAME)
 
 validate-cfn:
 	aws cloudformation validate-template --template-body $(LOCAL_TEMPLATE_URL)

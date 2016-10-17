@@ -356,6 +356,7 @@ Resources:
         "Fn::Base64":
           !Sub |
             #!/bin/bash -ex
+            echo "Launching version 2"
             yum update -y aws-cfn-bootstrap
             # Update the AWS CLI to the latest version
             yum install -y aws-cli
@@ -378,11 +379,9 @@ Resources:
       - WebServerSG
       - WebServerBalancerSG
     Properties:
-      MinSize: 1
+      MinSize: 2
       MaxSize: 2
       DesiredCapacity: 2
-      HealthCheckType: ELB
-      HealthCheckGracePeriod: 15
       LoadBalancerNames:
         - !Ref WebServerBalancer
       LaunchConfigurationName: !Ref WebServerLaunchConfig
@@ -400,17 +399,40 @@ Resources:
         Count: 2
         Timeout: PT30M
     UpdatePolicy:
-      AutoScalingRollingUpdate:
-        PauseTime: PT30M
-        MinInstancesInService: 1
-        MaxBatchSize: 1
-        WaitOnResourceSignals: true
+      AutoScalingReplacingUpdate:
+        WillReplace: true
     Metadata:
       "AWS::CloudFormation::Init":
         config:
-          commands:
-            hello:
-              command: echo hello world
+          packages:
+            yum:
+              nginx: [ "1:1.10.1-1.28.amzn1.x86_64" ]
+          files:
+            /usr/share/nginx/html/index.html:
+              content: !Sub |
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=1240, user-scalable=yes"></meta>
+                <title>Automation for the People</title>
+                </head>
+                <body>
+                <h2>Automation for the People</h2>
+                </body>
+                </html>
+              mode: "000444"
+              owner: nginx
+              group: nginx
+          services:
+            sysvinit:
+              nginx:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - "/etc/nginx/nginx.conf"
+                sources:
+                  - "/usr/share/nginx/html"
 
 Outputs:
   VpcId:
@@ -425,3 +447,6 @@ Outputs:
   ApplicationSource:
     Value: !Sub "https://github.com/${GitHubUser}/${GitHubRepoName}/tree/${GitHubBranchName}"
     Description: Location of the app source code.
+  BalancerDNSName:
+    Value: !GetAtt WebServerBalancer.DNSName
+    Description: DNS name where the load-balanced site can be found.
