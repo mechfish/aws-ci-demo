@@ -48,7 +48,7 @@ validate-cfn:
 	aws cloudformation validate-template --template-body $(LOCAL_TEMPLATE_URL)
 
 teardown:
-	@test -n "$(AWS_CI_DEMO_TEARDOWN_OK)" # you must set $$AWS_CI_DEMO_TEARDOWN_OK to confirm that you want to delete all AWS resources
+	test -n "$(AWS_CI_DEMO_TEARDOWN_OK)" # you must set $$AWS_CI_DEMO_TEARDOWN_OK to confirm that you want to delete all AWS resources
 	aws cloudformation delete-stack --stack-name $(STACK_NAME)
 
 .PHONY: provision validate-cfn teardown
