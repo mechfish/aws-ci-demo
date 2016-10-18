@@ -193,7 +193,6 @@ Resources:
       NetworkAclId: !Ref PublicNetworkAcl
 
   S3Bucket:
-#    DeletionPolicy: Retain
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "demo-${AWS::Region}-${AWS::AccountId}-${AppName}"
