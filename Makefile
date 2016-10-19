@@ -8,6 +8,14 @@ GITHUB_USERNAME?=mechfish
 GITHUB_REPO_NAME?=aws-ci-demo
 GITHUB_BRANCH_NAME?=master
 
+lambda/Lambdas.zip:
+	cd lambda && zip Lambdas.zip *.py
+
+# This is the point where we gotta switch this Makefile to Python or something; the
+# orchestration is getting just a bit beyond Make's capabilities.
+upbucket: lambda/Lambdas.zip
+	@aws s3 cp lambda/Lambdas.zip s3://demo-us-west-2-131250507245-a4tp
+
 provision:
 	test -n "$(GITHUB_OAUTH_TOKEN)" # you must set $$GITHUB_OAUTH_TOKEN before running this script
 	test -n "$(AWS_EC2_KEYNAME)" # you must set $$AWS_EC2_KEYNAME before running this script

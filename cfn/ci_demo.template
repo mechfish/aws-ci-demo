@@ -2,7 +2,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Description:
-  Build S3 bucket, VPC with public subnet, IGW, route tables, ACL, CodePipeline.
+  Build VPC with public subnet, IGW, route tables, ACL, CodePipeline.
 
 Parameters:
   AppName:
@@ -433,6 +433,140 @@ Resources:
                 sources:
                   - "/usr/share/nginx/html"
 
+  CodePipelineLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ""
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+          - Sid: "1"
+            Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+
+  CodePipelineLambdaPolicy:
+    Type: AWS::IAM::Policy
+    DependsOn:
+      - CodePipelineLambdaRole
+    Properties:
+      PolicyName: CodePipelineLambdaPolicy
+      Roles:
+        - !Ref CodePipelineLambdaRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "logs:*"
+            Resource:
+              - "arn:aws:logs:*:*:*"
+          - Effect: Allow
+            Action:
+              - codepipeline:AcknowledgeJob
+              - codepipeline:GetJobDetails
+              - codepipeline:PutJobSuccessResult
+              - codepipeline:PutJobFailureResult
+              # Okay, I don't have time to do the dance where I
+              # iteratively lock down the permissions, so here's a
+              # BIG SCARY shortcut!
+              #
+              # TODO: get rid of this
+              - "ec2:*"
+              - "cloudformation:*"
+              - "s3:*"
+              - "iam:*"
+              - "elasticloadbalancing:*"
+              - "autoscaling:*"
+              - "lambda:*"
+            Resource: "*"
+
+  CodePipelineLambdaDummy:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - CodePipelineLambdaRole
+      - CodePipelineLambdaPolicy
+    Properties:
+      Code:
+        S3Bucket: !Ref S3Bucket
+        S3Key: "Lambdas.zip"
+      Role: !GetAtt CodePipelineLambdaRole.Arn
+      Description: "Always return success"
+      Timeout: 20
+      Handler: lambdadummy.lambda_handler
+      Runtime: python2.7
+      MemorySize: 128
+
+  CiPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn:
+      - CodePipelineLambdaDummy
+    Properties:
+      Name: !Sub "${AppName}-Pipeline"
+      DisableInboundStageTransitions:
+        - Reason: Demonstration
+          StageName: Update
+      RoleArn: !GetAtt CodePipelineLambdaRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref S3Bucket
+      Stages:
+        - Name: Source
+          Actions:
+            - InputArtifacts: []
+              Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Version: 1
+                Provider: GitHub
+              OutputArtifacts:
+                - Name: !Sub "${AppName}-SourceArtifact"
+              Configuration:
+                Owner: !Ref GitHubUser
+                Repo: !Ref GitHubRepoName
+                Branch: !Ref GitHubBranchName
+                OAuthToken: !Ref GitHubToken
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - InputArtifacts:
+                - Name: !Sub "${AppName}-SourceArtifact"
+              Name: Build
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Version: 1
+                Provider: Lambda
+              OutputArtifacts: []
+              Configuration:
+                FunctionName: !Ref CodePipelineLambdaDummy
+                UserParameters: !Sub |
+                  {"stack": "${AWS::StackName}",
+                  "artifact": "${AppName}-SourceArtifact",
+                  "file": "myfile"}
+              RunOrder: 1
+        - Name: Update
+          Actions:
+            - InputArtifacts: []
+              Name: UpdateStack
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Version: 1
+                Provider: Lambda
+              OutputArtifacts: []
+              Configuration:
+                FunctionName: !Ref CodePipelineLambdaDummy
+                UserParameters: !Ref AWS::StackName
+              RunOrder: 1
+
 Outputs:
   VpcId:
     Value: !Ref MyVPC
@@ -449,3 +583,5 @@ Outputs:
   BalancerDNSName:
     Value: !GetAtt WebServerBalancer.DNSName
     Description: DNS name where the load-balanced site can be found.
+  CodePipelineURL:
+    Value: !Sub "https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${CiPipeline}"
