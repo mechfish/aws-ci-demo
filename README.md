@@ -92,22 +92,34 @@ export GITHUB_BRANCH_NAME=master
 Clone this Git repository, `cd` into the working directory, and type:
 
 ```
-make provision
+python ci/bin/provision.py
 ```
 
-If you haven't already configured shell environment variables, you may
+If you haven't already configured environment variables, you may
 need to prefix this command with their settings, e.g.:
 
 ```
-GITHUB_OAUTH_TOKEN=abcd1234 GITHUB_USERNAME=mememe AWS_EC2_KEYNAME=my-keypair make provision
+GITHUB_OAUTH_TOKEN=abcd1234 GITHUB_USERNAME=mememe AWS_EC2_KEYNAME=my-keypair python ci/bin/provision.py
 ```
 
 The CloudFormation stack will be created and the script will pause to
 wait until it is complete. You can follow the stack event stream on
-the AWS console. When the stack succeeds the provision command will
-exit by printing the stack status, and you can use a browser to visit
-the load balancer's DNS name (found in the "outputs" of the stack) in
-order to see the web page running.
+the AWS console.
+
+When the stack succeeds, the provision command will exit by printing
+the DNS name which you can use to access your web page!
+
+## Teardown
+
+When you get tired of this demo you can delete all of its CloudFormation
+stacks with:
+
+```
+python ci/bin/terminate.py
+```
+
+You will be prompted to enter `yes` to make it harder to destroy your
+running cloud application by accident.
 
 ## Lessons Learned
 

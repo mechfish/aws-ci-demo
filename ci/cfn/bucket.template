@@ -1,0 +1,29 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  Build an S3 bucket to hold app builds.
+
+Parameters:
+  AppName:
+    Type: String
+    Description: "Name of the application"
+    MinLength: 2
+    MaxLength: 15
+    Default: "a4tp"
+    AllowedPattern: "[a-z0-9][-. a-z0-9]*"
+    ConstraintDescription: >-
+      Must be between 2 and 15 characters long, lowercase and may
+      contain alphanumeric characters, hyphens (-), and dots (.), but
+      must start with alphanumeric.
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "builds-${AWS::Region}-${AWS::AccountId}-${AppName}"
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: "Builds-${AppName}"
