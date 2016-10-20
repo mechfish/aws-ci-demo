@@ -1,5 +1,5 @@
 ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-LOCAL_TEMPLATE_URL:=file://$(ROOT_DIR)/cfn/ci_demo.template
+LOCAL_TEMPLATE_URL:=file://$(ROOT_DIR)/ci/cfn/ci_demo.template
 
 # Any of these can be overridden by environment variables.
 STACK_NAME?=aws-ci-demo
@@ -13,8 +13,13 @@ lambda/Lambdas.zip:
 
 # This is the point where we gotta switch this Makefile to Python or something; the
 # orchestration is getting just a bit beyond Make's capabilities.
-upbucket: lambda/Lambdas.zip
+upload-lambdas: lambda/Lambdas.zip
 	@aws s3 cp lambda/Lambdas.zip s3://demo-us-west-2-131250507245-a4tp
+
+upload-build:
+	cd built && zip -r ../tmp/initial-build.zip .
+	aws s3 cp tmp/initial-build.zip s3://demo-us-west-2-131250507245-a4tp
+	rm tmp/initial-build.zip
 
 provision:
 	test -n "$(GITHUB_OAUTH_TOKEN)" # you must set $$GITHUB_OAUTH_TOKEN before running this script
@@ -59,4 +64,17 @@ teardown:
 	test -n "$(AWS_CI_DEMO_TEARDOWN_OK)" # you must set $$AWS_CI_DEMO_TEARDOWN_OK to confirm that you want to delete all AWS resources
 	aws cloudformation delete-stack --stack-name $(STACK_NAME)
 
-.PHONY: provision validate-cfn teardown
+# Build the source code.
+#
+# In this simple example, the code is just a static file, so the
+# "build" is just a recursive copy from src/ to build/. But one could
+# add more build steps.
+#
+# The builds are being run in Lambda at the
+# moment, though, so depending on what the build is, one might have to
+# tinker with ci/lambda/build.py to install more tools into the Lambda
+# environment.
+build:
+	cp -r src/* built
+
+.PHONY: provision validate-cfn teardown build

@@ -41,6 +41,13 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     Description: "Name of an existing EC2 KeyPair for SSH access to the instances."
 
+# FIXME: Put the bucket name as a parameter.
+
+  BuildKey:
+    Type: String
+    Default: initial-build.zip
+    Description: Key which points to the build to be deployed, in the S3 bucket.
+
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -355,13 +362,15 @@ Resources:
         "Fn::Base64":
           !Sub |
             #!/bin/bash -ex
-            echo "Launching version 2"
+            echo "Launching build ${BuildKey}"
             yum update -y aws-cfn-bootstrap
             # Update the AWS CLI to the latest version
             yum install -y aws-cli
 
             function error_exit
             {
+            echo "Sleeping for 5 minutes of debugging time"
+            sleep 600
             /opt/aws/bin/cfn-signal --exit-code 1 --region ${AWS::Region} --stack ${AWS::StackName} --resource WebServerASG
             exit 1
             }
@@ -406,23 +415,11 @@ Resources:
           packages:
             yum:
               nginx: [ "1:1.10.1-1.28.amzn1.x86_64" ]
-          files:
-            /usr/share/nginx/html/index.html:
-              content: !Sub |
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=1240, user-scalable=yes"></meta>
-                <title>Automation for the People</title>
-                </head>
-                <body>
-                <h2>Automation for the People</h2>
-                </body>
-                </html>
-              mode: "000444"
-              owner: nginx
-              group: nginx
+          sources:
+            /usr/share/nginx/html: !Sub "https://${S3Bucket}.s3.amazonaws.com/${BuildKey}"
+          commands:
+            ownership:
+              command: "chown -R nginx.nginx /usr/share/nginx/html"
           services:
             sysvinit:
               nginx:
@@ -432,6 +429,12 @@ Resources:
                   - "/etc/nginx/nginx.conf"
                 sources:
                   - "/usr/share/nginx/html"
+      "AWS::CloudFormation::Authentication":
+        "S3AccessKey":
+          type: S3
+          buckets:
+            - !Ref S3Bucket
+          roleName: !Ref WebServerRole
 
   CodePipelineLambdaRole:
     Type: AWS::IAM::Role
@@ -544,7 +547,8 @@ Resources:
                 Owner: AWS
                 Version: 1
                 Provider: Lambda
-              OutputArtifacts: []
+              OutputArtifacts:
+                - Name: !Sub "${AppName}-Build"
               Configuration:
                 FunctionName: !Ref CodePipelineLambdaDummy
                 UserParameters: !Sub |
@@ -554,7 +558,8 @@ Resources:
               RunOrder: 1
         - Name: Update
           Actions:
-            - InputArtifacts: []
+            - InputArtifacts:
+                - Name: !Sub "${AppName}-Build"
               Name: UpdateStack
               ActionTypeId:
                 Category: Invoke
