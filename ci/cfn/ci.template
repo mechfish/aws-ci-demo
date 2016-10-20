@@ -326,7 +326,7 @@ Resources:
                   {"source_artifact": "${AppName}-SourceArtifact",
                   "build_artifact": "${AppName}-Build",
                   "template_artifact": "${AppName}-Template",
-                  "template_src_path": "ci/cfn/webs.template"}
+                  "template_subdir_path": "ci/cfn"}
               RunOrder: 1
         - Name: Release
           Actions:
@@ -346,7 +346,7 @@ Resources:
                   {"web_stack_name": "${WebStackName}",
                   "build_artifact": "${AppName}-Build",
                   "template_artifact": "${AppName}-Template",
-                  "template_file": "autoscaling.template",
+                  "template_file": "webs.template",
                   "vpc_id": "${MyVPC}",
                   "subnet_id_a": "${publicSubnetA}",
                   "appname": "${AppName}",

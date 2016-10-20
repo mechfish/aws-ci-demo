@@ -99,7 +99,7 @@ def get_user_params(job_data):
         # then fail the job with a helpful message.
         raise Exception('UserParameters could not be decoded as JSON')
 
-    required_items = ['source_artifact', 'build_artifact', 'template_artifact', 'template_src_path']
+    required_items = ['source_artifact', 'build_artifact', 'template_artifact', 'template_subdir_path']
     for i in required_items:
         if i not in decoded_parameters:
             raise Exception('Your UserParameters JSON must include ' + i)
@@ -202,7 +202,7 @@ def lambda_handler(event, context):
 
         template_artifact = find_artifact(output_artifacts, params['template_artifact'])
         # Pick the template out of the source code
-        put_zipped_artifact(s3, os.path.join(src_dir, params['template_src_path']), template_artifact)
+        put_zipped_artifact(s3, os.path.join(src_dir, params['template_subdir_path']), template_artifact)
 
         shutil.rmtree(src_dir)
         shutil.rmtree(dest_dir)

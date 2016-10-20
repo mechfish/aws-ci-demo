@@ -96,7 +96,7 @@ def assemble_web_stack_parameters(params, input_artifacts):
                     },{
                         'ParameterKey': 'BuildKey',
                         'ParameterValue': build_key
-                    }
+                    }]
     return stack_params
 
 def update_stack(stack, template, stack_params):
