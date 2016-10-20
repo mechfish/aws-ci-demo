@@ -116,7 +116,9 @@ def update_stack(stack, template, stack_params):
 
     """
     try:
-        cf.update_stack(StackName=stack, TemplateBody=template, Parameters=stack_params)
+        cf.update_stack(StackName=stack, TemplateBody=template,
+                        Parameters=stack_params,
+                        Capabilities=['CAPABILITY_IAM'])
         return True
 
     except botocore.exceptions.ClientError as e:
@@ -159,7 +161,8 @@ def create_stack(stack, template, stack_params):
     Throws:
         Exception: Any exception thrown by .create_stack()
     """
-    cf.create_stack(StackName=stack, TemplateBody=template, Parameters=stack_params)
+    cf.create_stack(StackName=stack, TemplateBody=template, Parameters=stack_params,
+                    Capabilities=['CAPABILITY_IAM'])
 
 def get_stack_status(stack):
     """Get the status of an existing CloudFormation stack

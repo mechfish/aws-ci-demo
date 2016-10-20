@@ -324,7 +324,7 @@ if __name__ == "__main__":
             sys.exit(1)
         web_outputs = get_stack_outputs(cf, web_stack_name)
         print("The deployed build is " + web_outputs['ApplicationBuild'])
-        print("Visit your website at " + web_outputs['BalancerDnsName'])
+        print("Visit your website at " + web_outputs['BalancerDNSName'])
 
     except Exception as e:
         # If any other exceptions which we didn't expect are raised
