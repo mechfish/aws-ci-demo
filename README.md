@@ -1,21 +1,18 @@
 # aws-ci-demo
 
-An experiment in pure-AWS continuous integration using
+An experiment in 100%-AWS-powered continuous integration using
 CloudFormation, AutoScaling, CodePipeline, and Lambda.
 
-We just deploy a simple static web page. (For now.)
+## Important Safety Warning
 
-## Warning
-
-**Don't run this in production** before scoping down the permissions:
+**Don't run this in production** before scoping down the permissions.
   The `CodePipelineLambdaPolicy` is too broad -- it's an experiment,
-  and I just haven't had the time to tighten it yet. You can run this
-  in a test account with unimportant assets, then tear it down within
-  a couple of hours. But I wouldn't necessarily trust it for long-term
-  security.
+  and I haven't had the time to tighten it down yet. Run this in a
+  test account that does not contain mission-critical assets, then
+  tear it down within a couple of hours.
 
-  (See *Is This Ready For Production*, below, for details and other
-  caveats.)
+  (See *Is This Ready For Production*, below, for more details and
+  other caveats.)
 
 ## Design Principles
 
@@ -40,28 +37,44 @@ We just deploy a simple static web page. (For now.)
 
 ## Prerequisites
 
-- You'll need GNU Make (already installed on the Mac and Linux).
+- To launch the infrastructure you'll need Python 2.7 (preinstalled on
+the Mac and many Linuxes, hooray!).
 
-- You need `zip` installed to bundle up Lambda functions (also
-  preinstalled on the Mac).
+- You'll need the Boto3 AWS library for Python. To install this you
+  need the Python package manager, `pip`. (If `pip -h` doesn't return
+  anything, you can install `pip` using
+  [its install docs](https://pip.pypa.io/en/stable/installing/).) Then
+  run this in your shell:
 
-- [Install the AWS CLI tool](https://aws.amazon.com/cli/). Amazon's
-  instructions are fine; on the Mac I prefer to install
-  [Homebrew](http://brew.sh) and then use: `brew install awscli`.
+  ```
+  pip install boto3
+  ```
+
+  You may need to give yourself admin permissions (e.g. using `su` or
+  `sudo`) to make this work on your laptop. (I do, because I'm one of
+  those paranoid people.)
 
 - You need to
-  [configure the AWS CLI](http://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html)
-  with API keys for a AWS user with administrator permissions. These
-  credentials will be used to bootstrap the AWS infrastructure, but
-  will not leave your local machine.
+  [configure your machine with AWS credentials](http://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html)
+  for a AWS user with administrator permissions. These credentials
+  will be used to bootstrap the AWS infrastructure, but will not leave
+  your local machine.
 
-  Choose either the `us-east-1` or `us-west-2` regions -- other
-  regions are not supported at this time.
+  You must also configure the AWS region to either `us-east-1` or
+  `us-west-2` regions -- the others are not supported at this time.
+
+  To configure my credentials, I just set the `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` environment
+  variables, and that's how this project has been tested. But you
+  should be able to install the AWS CLI and run `aws configure` to set
+  these up, instead -- Boto3 should be able to work with that out of
+  the box.
 
 - You must
   [create an AWS keypair](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html#having-ec2-create-your-key-pair)
   in your chosen region, in case you need to log in and debug your
-  instances.
+  instances. Set the `AWS_EC2_KEYNAME` environment variable to the
+  name of this keypair.
 
 - You'll be deploying code from Github to AWS. To get a read/write
   copy of the code to deploy, fork this repository to your own Github
@@ -76,15 +89,21 @@ We just deploy a simple static web page. (For now.)
 
 - The CI provisioning scripts get their configuration from environment
   variables. You can set these on the command line each time, or
-  pre-configure the project by setting environment variables in (for
-  example) `~/.profile` or `~/.bashrc`:
+  pre-configure the project by setting them in (for example)
+  `~/.profile` or `~/.bashrc`, something like this:
 
 ```
+export AWS_ACCESS_KEY_ID=your-key-id
+export AWS_SECRET_ACCESS_KEY=your-secret-key
+export AWS_DEFAULT_REGION=us-east-1
 export AWS_EC2_KEYNAME=your_ec2_keypair_name
 export GITHUB_OAUTH_TOKEN=your_github_token
 export GITHUB_USERNAME=your_github_username
-export GITHUB_REPO_NAME=aws-ci-demo  # or whatever you named your fork
-export GITHUB_BRANCH_NAME=master
+
+# optionally, if you changed the repo name or branch name, uncomment
+#and edit these defaults:
+#export GITHUB_REPO_NAME=aws-cli-demo
+#export GITHUB_BRANCH_NAME=master
 ```
 
 ## Installation
@@ -102,12 +121,17 @@ need to prefix this command with their settings, e.g.:
 GITHUB_OAUTH_TOKEN=abcd1234 GITHUB_USERNAME=mememe AWS_EC2_KEYNAME=my-keypair python ci/bin/provision.py
 ```
 
-The CloudFormation stack will be created and the script will pause to
-wait until it is complete. You can follow the stack event stream on
-the AWS console.
+Two CloudFormation stacks will be created. The "CI" stack is built
+first. It includes a CodePipeline setup which builds a second "web"
+stack, and deploys a build of the site source to the web stack. The
+`provision.py` script will wait for the web stack to appear. While
+you're waiting, you can follow the stack event streams on the AWS
+console.
 
-When the stack succeeds, the provision command will exit by printing
-the DNS name which you can use to access your web page!
+When the launch succeeds, `provision.py` should exit by printing the
+DNS name which you can use to access your web page!
+
+**FIXME: cite typical timing **
 
 ## Teardown
 

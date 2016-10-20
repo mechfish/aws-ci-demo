@@ -40,7 +40,8 @@ Parameters:
 
 Mappings:
   AWSRegionVirt2AMI:
-    # To find new base AMIs at any given time, visit https://aws.amazon.com/amazon-linux-ami/
+    # To find new base AMIs at any given time,
+    # visit https://aws.amazon.com/amazon-linux-ami/
     us-east-1:
       HVM: "ami-c481fad3"
     us-west-2:
@@ -204,6 +205,10 @@ Resources:
             yum update -y aws-cfn-bootstrap
             # Update the AWS CLI to the latest version
             yum install -y aws-cli
+            # Perform all security updates. The cloud-init system in Amazon Linux
+            # already applied the critical ones before this script started,
+            # but add the less-critical ones.
+            yum -y --security update
 
             function error_exit
             {
@@ -215,6 +220,10 @@ Resources:
 
             # Run cfn-init to execute the ASG's AWS::CloudFormation::Init template
             /opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource WebServerASG || error_exit "Failed to complete cfn-init"
+
+            # Run instance health check to confirm that the software
+            # deployed on this system is working
+            /usr/local/bin/healthcheck || error_exit "FAILED instance health check"
 
             # If all went well, signal success
             /opt/aws/bin/cfn-signal --exit-code 0 --region ${AWS::Region} --stack ${AWS::StackName} --resource WebServerASG
@@ -248,13 +257,32 @@ Resources:
       AutoScalingReplacingUpdate:
         WillReplace: true
     Metadata:
+      # Edit this to change the instance configuration
       "AWS::CloudFormation::Init":
         config:
           packages:
             yum:
+              # We pin a specific version of nginx - adjust this when
+              # nginx security releases come out.
               nginx: [ "1:1.10.1-1.28.amzn1.x86_64" ]
           sources:
+            # The static site directory is read from the build artifact
             /usr/share/nginx/html: !Sub "https://${BuildBucket}.s3.amazonaws.com/${BuildKey}"
+          files:
+            # For expediency we're putting the health check code
+            # inline in this template.
+            # TODO: Include the healthcheck install in a more complex build artifact.
+            /usr/local/bin/healthcheck:
+              content: !Sub |
+                #!/bin/sh -e
+                # Ensure that nginx is running
+                service nginx status 2>/dev/null | grep running >/dev/null || echo "ERROR: nginx service is not running"
+                # Ensure that the stock nginx page is NOT running
+                curl localhost:80 2>/dev/null | grep -v 'If you can read this page' >/dev/null
+                if [ $? == 0 ]; then echo "ERROR: nginx stock page appears to be being served"; exit 1; fi
+                # Ensure that the requirements are being met on this instance
+                curl localhost:80 2>/dev/null | grep 'Automation for the People' >/dev/null || echo "ERROR: could not find required message on home page"
+              mode: "000550"
           commands:
             ownership:
               command: "chown -R nginx.nginx /usr/share/nginx/html"

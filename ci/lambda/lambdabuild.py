@@ -187,21 +187,23 @@ def lambda_handler(event, context):
         # Extract the params
         params = get_user_params(job_data)
 
-        # Get the list of artifacts passed to the function
+        # Get the lists of artifacts coming in and out of this function
         input_artifacts = job_data['inputArtifacts']
         output_artifacts = job_data['outputArtifacts']
-        # Get S3 client to access artifacts with
-        s3 = setup_s3_client(job_data)
 
+        # Perform a build on the source (from source_artifact)
+        # and write results to the build_artifact
+        s3 = setup_s3_client(job_data)
         source_artifact = find_artifact(input_artifacts, params['source_artifact'])
         src_dir = get_zipped_artifact(s3, source_artifact)
         dest_dir = tempfile.mkdtemp()
-        perform_build(src_dir, dest_dir)
+        perform_build(os.path.join(src_dir, 'src'), dest_dir)
         build_artifact = find_artifact(output_artifacts, params['build_artifact'])
         put_zipped_artifact(s3, dest_dir, build_artifact)
 
+        # Pick the template out of the source code and write it to the
+        # template_artifact
         template_artifact = find_artifact(output_artifacts, params['template_artifact'])
-        # Pick the template out of the source code
         put_zipped_artifact(s3, os.path.join(src_dir, params['template_subdir_path']), template_artifact)
 
         shutil.rmtree(src_dir)
