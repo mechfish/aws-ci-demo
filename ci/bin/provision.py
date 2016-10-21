@@ -9,12 +9,13 @@ from __future__ import print_function
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
 import traceback
 import time
-import urllib
+import urllib2
 import zipfile
 
 import boto3
@@ -204,6 +205,23 @@ def upload_lambda_functions(s3, bucket_name, object_key):
         obj = s3.head_object(Bucket=bucket_name, Key=object_key)
         return obj['VersionId']
 
+def test_web_site(siteURL):
+    """Run acceptance tests on the given web site.
+
+    Args:
+        siteURL: URL of the website
+
+    Returns:
+        True if the site is returning reasonable output on port 80.
+    """
+    try:
+        body = urllib2.urlopen(siteURL, None, 5).read()
+        # We just search directly for the phrase
+        # TODO: Abstract this into a suite of separate tests
+        return (re.search('Automation for the People', body) != None)
+    except urllib2.URLError:
+        return False
+
 def assert_config():
     """Print an error and exit if required configuration is missing.
     """
@@ -324,7 +342,19 @@ if __name__ == "__main__":
             sys.exit(1)
         web_outputs = get_stack_outputs(cf, web_stack_name)
         print("The deployed build is " + web_outputs['ApplicationBuild'])
-        print("Visit your website at " + web_outputs['BalancerDNSName'])
+
+        siteURL = 'http://' + web_outputs['BalancerDNSName']
+        print("Visit your website at " + siteURL)
+
+        if not test_web_site(siteURL):
+            print("The AutoScaling group may still be launching. Waiting for the balancer to return the expected web page...")
+            print("Querying " + siteURL)
+            start_time = time.time()
+            while not test_web_site(siteURL):
+                if time.time() - start_time > 600:
+                    print("Waited for five minutes without success.")
+                    sys.exit(1)
+                sleep(10)
 
     except Exception as e:
         # If any other exceptions which we didn't expect are raised
