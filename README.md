@@ -196,15 +196,16 @@ bucket. Sorry about that.)
 ### Architecture and Release Workflow
 
 Two CloudFormation stacks are being created: The CI stack is launched,
-and it launches the "web" stack itself using CodePipeline.
+and it takes care of launching the "web" stack, using CodePipeline and
+Lambda.
 
 First, an S3 bucket is created and Lambda functions uploaded to it.
 
 Then the "CI" stack is built. It takes about 75 seconds for
 CloudFormation to create the VPC and its trimmings (subnet, gateway,
 etc.) together with a CodePipeline workflow. That workflow has three
-stages, which are triggered once when they are first created, and on
-every subsequent push to the Github `master` branch:
+stages, which run once when they are first created, then on every
+subsequent push to the Github `master` branch:
 
 - The Source stage pulls the latest `master` code from Github.
 
@@ -214,15 +215,15 @@ every subsequent push to the Github `master` branch:
   could eventually have fancier build steps -- anything we can do in
   Lambda.
 
-- The Deploy stage reads the `ci/cfn/webs.template` CloudFormation
-  template from the latest commit and uses it to update the "Web
+- The Deploy stage reads the `ci/cfn/webs.template` file from the
+  latest commit and uses it to launch (or update) the "Web
   stack". This has an Elastic Load Balancer (Classic version) plus two
-  `t2.micro` instances running nginx in an AutoScaling
-  group. CloudFormation configures the instances to download and
-  install the latest build on their own, via a `cfn-init` script.
+  `t2.micro` instances running nginx in an AutoScaling group. The
+  instances download and install the latest build on their own, via a
+  `cfn-init` script.
 
-The web stack deploy process happens in "blue-green" style. When new
-code is pushed:
+Web stack updates roll out in "blue-green" fashion. When new code is
+pushed:
 
 - CloudFormation launches an entirely new AutoScaling group to replace
   the old. Both the old and the new group are temporarily connected to
@@ -230,11 +231,11 @@ code is pushed:
   until they start passing ELB health checks.
 
 - If the instances fail ELB health checks, or their local health
-  checks, they will be terminated as the CloudFormation update fails
-  and rolls back, and the old instances will remain in production the
-  entire time.
+  checks, the CloudFormation update fails and rolls back. The new
+  instances are terminated, and the old instances remain in
+  production.
 
-- The instance-local health checks are implemented in a
+- Instance-local health checks are implemented by a
   `/usr/local/bin/healthcheck` script, which gets installed and run at
   boot time by CloudFormation's `cloud-init` and `cfn-init`
   systems. This health check looks for a running `nginx`, and uses
@@ -242,7 +243,7 @@ code is pushed:
   correctly. If this check fails, the instance signals a `FAILURE` to
   CloudFormation and, once again, the update is rolled back.
 
-- If the new AutoScaling group comes up successfully, CloudFormation
+- Once the new AutoScaling group comes up successfully, CloudFormation
   terminates the old AutoScaling group.
 
 ### Troubleshooting
@@ -260,7 +261,7 @@ It's kind of fun to watch all this happening in the AWS consoles!
 
 When things blow up:
 
-- Errors in the CodePipeline Lambda-based steps can be debugged by
+- Errors in CodePipeline's Lambda-based steps can be debugged by
   clicking through to the Lambda logs.
 
 - The instances configure themselves quickly, so they also tend to
@@ -283,32 +284,33 @@ When things blow up:
   anyone with Github commit permissions can take over your AWS
   account.
 
-- One design compromise in this system is that it doesn't use
-  AMIs. Instances are immutable, but they aren't all alike: To prevent
-  security incidents, Amazon Linux is running `yum update --security`
-  on every instance boot, so two successive releases won't necessarily
-  be running the same software. If an incompatible update ends up in
-  the upstream repositories, we will have a terrible time trying to
-  revert. The only working copies of our old system will be the ones
-  that are already running.
+- At the moment, this system doesn't use up-to-date custom AMIs. As a
+  result, the instances are immutable, but they aren't all alike: To
+  prevent security incidents, Amazon Linux is running `yum update
+  --security` on every instance boot, so two successive releases won't
+  necessarily be running the same software. If an incompatible update
+  ends up in the upstream repositories, we will have a terrible time
+  trying to revert. The only working copies of our old system will be
+  the ones that are already running.
 
-  For a static website this is probably fine. Linux distro maintainers
-  would have to screw up pretty badly to break nginx to the point that
-  it can't serve HTTP. But what about fancier projects?
+  For a static website this is probably an okay tradeoff. Linux distro
+  maintainers would have to screw up pretty badly to break nginx to
+  the point that it can't serve HTTP. But what about fancier projects?
 
   One sensible strategy is to bake AMI images using a tool like
   Packer. Trying to trigger Packer from a Lambda function is probably
   doable, but is outside the scope of this demo.
 
-- For static pages the lack of a local development environment is less
-  of a deal, but for anything fancier I might want a local Docker or
-  Vagrant box running `nginx` with a production-like
+- For static pages the lack of a local development environment is not
+  a huge problem, but for anything fancier I might want a local Docker
+  or Vagrant box running `nginx` with a production-like
   configuration. Which argues against this project's use of Amazon
   Linux, and against the use of `cfn-init` as the only way of
-  configuring instances. I'm tempted to have the instances copy an
-  Ansible configuration from S3 and run Ansible locally to configure
-  themselves; the same Ansible configuration could be run inside a
-  development container or in a Packer-based AMI build script.
+  configuring instances. I'm tempted to translate most of the
+  `cfn-init` spec to an Ansible spec, have the instances copy that
+  spec from S3 and run Ansible locally to configure themselves, then
+  use the same Ansible configuration inside a development container
+  and/or in a Packer-based AMI build script.
 
 - The testing/health checking scheme has design flaws that could be
   fixed. One fix is to extract the test scripts into a `tests`
@@ -319,13 +321,13 @@ When things blow up:
   application-aware health-check endpoint. This led to an incident
   where I temporarily had four instances running, two serving
   "Automation for the People" and two serving "Automation by the
-  People". The latter caused the `ci/bin/status.py` test to fail --
-  but only 50% of the time, thanks to the load balancing. And it
-  failed the instance health check, so it eventually got rolled
-  back. But any bug that makes it through the ELB health check is
-  prone to going temporarily live on the ELB during deployment. I
-  conclude that ELB health checks are really important and I should
-  have made mine a little fancier!
+  People". The latter caused the `ci/bin/status.py` test script to
+  fail when run by hand -- but it only failed on 50% of page loads,
+  thanks to load balancing. Eventually, the failing instances rolled
+  themselves back. But any bug that makes it through the ELB health
+  check is prone to going temporarily live on the ELB during
+  deployment. I conclude that ELB health checks are really important
+  and they should be beefed up a bit!
 
 - I wonder what I'd gain from the newer Application Load Balancers.
 
@@ -333,7 +335,8 @@ When things blow up:
 
 - YAML-based CloudFormation templates are the greatest thing ever.
 
-- Similarly, I now understand why everyone raves about AWS Lambda.
+- Similarly, I now understand why AWS Lambda is said to be great, at
+  least once one has the CloudFormation worked out for it.
 
 - CodePipeline plus Lambda is very powerful, though it is a bit hard
   to figure out what is going on from the various separate AWS
