@@ -172,8 +172,14 @@ def ensure_bucket(s3, bucket_name):
         s3.head_bucket(Bucket=bucket_name)
     except:
         print("Creating bucket " + bucket_name + " to hold builds")
-        s3.create_bucket(Bucket=bucket_name,
-                         CreateBucketConfiguration={'LocationConstraint': aws_region()})
+        # Work around a truly infuriating inconsistency in the AWS API:
+        # you can't use a LocationConstraint of us-east-1 or it fails.
+        reg = aws_region()
+        if reg != 'us-east-1':
+            s3.create_bucket(Bucket=bucket_name,
+                             CreateBucketConfiguration={'LocationConstraint': reg})
+        else:
+            s3.create_bucket(Bucket=bucket_name)
         boto3.resource('s3').Bucket(bucket_name).wait_until_exists()
     versioning = s3.get_bucket_versioning(Bucket=bucket_name)
     try:
