@@ -269,19 +269,20 @@ Resources:
             # The static site directory is read from the build artifact
             /usr/share/nginx/html: !Sub "https://${BuildBucket}.s3.amazonaws.com/${BuildKey}"
           files:
-            # For expediency we're putting the health check code
+            # For expediency we're putting the test code
             # inline in this template.
             # TODO: Include the healthcheck install in a more complex build artifact.
             /usr/local/bin/healthcheck:
               content: !Sub |
-                #!/bin/sh -e
+                #!/bin/sh
+                function error_exit { echo "ERROR: $1"; exit 1; }
                 # Ensure that nginx is running
-                service nginx status 2>/dev/null | grep running >/dev/null || echo "ERROR: nginx service is not running"
+                service nginx status 2>/dev/null | grep running >/dev/null || error_exit "nginx service is not running"
                 # Ensure that the stock nginx page is NOT running
-                curl localhost:80 2>/dev/null | grep -v 'If you can read this page' >/dev/null
-                if [ $? == 0 ]; then echo "ERROR: nginx stock page appears to be being served"; exit 1; fi
+                curl localhost:80 2>/dev/null | grep 'If you can read this page' >/dev/null
+                if [ $? == 0 ]; then error_exit "nginx stock page appears to be being served"; fi
                 # Ensure that the requirements are being met on this instance
-                curl localhost:80 2>/dev/null | grep 'Automation for the People' >/dev/null || echo "ERROR: could not find required message on home page"
+                curl localhost:80 2>/dev/null | grep 'Automation for the People' >/dev/null || error_exit "could not find required message on home page"
               mode: "000550"
           commands:
             ownership:
