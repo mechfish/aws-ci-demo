@@ -248,7 +248,8 @@ def start_update_or_create(job_id, stack, template, stack_params):
     """
     if stack_exists(stack):
         status = get_stack_status(stack)
-        if status not in ['CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'UPDATE_COMPLETE']:
+        if status not in ['CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'UPDATE_COMPLETE',
+                          'UPDATE_ROLLBACK_COMPLETE']:
             # If the CloudFormation stack is not in a state where
             # it can be updated again then fail the job right away.
             put_job_failure(job_id, 'Stack cannot be updated when status is: ' + status)
