@@ -33,8 +33,8 @@ CloudFormation, AutoScaling, CodePipeline, and Lambda.
   `sudo`) to make this work on your laptop. (I need to do this,
   because I run a relatively paranoid laptop.)
 
-  (If `pip` is missing from your machine, you can
-  [install it](https://pip.pypa.io/en/stable/installing/).)
+  If `pip` is missing from your machine, you can
+  [install it](https://pip.pypa.io/en/stable/installing/).
 
 - You need to
   [configure your machine with AWS credentials](http://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html). These
@@ -44,7 +44,7 @@ CloudFormation, AutoScaling, CodePipeline, and Lambda.
   machine.
 
   You must also set the AWS region to either `us-east-1` or
-  `us-west-2` regions -- the others are not supported at this time.
+  `us-west-2` -- the others are not supported at this time.
 
   To set your AWS credentials, you can install the AWS CLI and run
   `aws configure`. Or you can set the `AWS_ACCESS_KEY_ID`,
@@ -178,14 +178,15 @@ bucket. Sorry about that.)
 - See how far we can get using only AWS services (plus
   Github).
 
-- Experiment with the newer CodePipeline and Lambda features and see
-  how much we miss Jenkins. Lambda-based builds have the usual
-  "serverless" features: Fewer OS packages to maintain, fewer
-  processes to monitor, pay-per-use fee structure, etc.
-
 - Take full advantage of CloudFormation's built-in release
   orchestration by building smoke tests directly into instance and
   load balancer health checks.
+
+- Experiment with the newer CodePipeline and Lambda features and see
+  how much we miss Jenkins. Lambda-based builds have the usual
+  "serverless" features: Fewer OS packages to maintain, fewer
+  processes to monitor, pay-per-use fee structure, a firm guarantee
+  that all configuration is captured in code, *et cetera*.
 
 - Though it is overkill for a static site, experiment with using
   Lambda to do "real builds", creating and archiving separate S3
@@ -272,10 +273,15 @@ When things blow up:
 
 ## Is This Ready For Production?
 
-- As mentioned up-top, I'd tighten the security before deploying this
-  in production. Giving a Lambda function permission to manage IAM
-  roles is too risky -- the Lambda runs code from Github, so anyone
-  with Github commit permissions can take over your AWS account.
+- I like the CloudFormation/AutoScaling based blue-green
+  deployment. Admittedly, I've seen it used in production before,
+  which gives me confidence that it can work!
+
+- As I mentioned up front, I'd tighten the security before deploying
+  this in production. Giving a Lambda function permission to manage
+  IAM roles is too risky -- the Lambda runs code from Github, so
+  anyone with Github commit permissions can take over your AWS
+  account.
 
 - One design compromise in this system is that it doesn't use
   AMIs. Instances are immutable, but they aren't all alike: To prevent
@@ -294,20 +300,34 @@ When things blow up:
   Packer. Trying to trigger Packer from a Lambda function is probably
   doable, but is outside the scope of this demo.
 
-- Another potential annoyance is the lack of a local development
-  environment. Again, for static pages this is no big deal. But for
-  anything fancier I might want a local Docker environment. That in
-  turn argues against the use of Amazon Linux, and against the use of
-  `cfn-init` as the only way of configuring instances. I'm tempted to
-  have the instances copy down an Ansible configuration from S3 and
-  run local Ansible to configure themselves; the same Ansible could be
-  run inside a development container or in a Packer-based AMI build
-  script. But...
+- For static pages the lack of a local development environment is less
+  of a deal, but for anything fancier I might want a local Docker or
+  Vagrant box running `nginx` with a production-like
+  configuration. Which argues against this project's use of Amazon
+  Linux, and against the use of `cfn-init` as the only way of
+  configuring instances. I'm tempted to have the instances copy an
+  Ansible configuration from S3 and run Ansible locally to configure
+  themselves; the same Ansible configuration could be run inside a
+  development container or in a Packer-based AMI build script.
 
 - The testing/health checking scheme has design flaws that could be
-  fixed. For example, the ELB health check pings port 80, but doesn't
-  ping a special application-aware health-check endpoint. I created an
-  incident where four instances were running,
+  fixed. One fix is to extract the test scripts into a `tests`
+  directory and make them easier to edit; that's fairly easy.
+
+  But there's also some strategic changes to make. For example, the
+  ELB health check pings port 80, but doesn't ping a special
+  application-aware health-check endpoint. This led to an incident
+  where I temporarily had four instances running, two serving
+  "Automation for the People" and two serving "Automation by the
+  People". The latter caused the `ci/bin/status.py` test to fail --
+  but only 50% of the time, thanks to the load balancing. And it
+  failed the instance health check, so it eventually got rolled
+  back. But any bug that makes it through the ELB health check is
+  prone to going temporarily live on the ELB during deployment. I
+  conclude that ELB health checks are really important and I should
+  have made mine a little fancier!
+
+- I wonder what I'd gain from the newer Application Load Balancers.
 
 ## Conclusions
 
@@ -319,4 +339,3 @@ When things blow up:
   to figure out what is going on from the various separate AWS
   consoles. A central message bus, or some Slack-channel integration,
   might help to make the workflow clearer.
-
