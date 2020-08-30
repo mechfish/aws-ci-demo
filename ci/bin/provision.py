@@ -280,7 +280,7 @@ def assemble_ci_stack_parameters(app_name, bucket_name, lambda_key, lambda_versi
                         'ParameterValue': os.getenv('GITHUB_REPO_NAME', 'aws-ci-demo')
                     },{
                         'ParameterKey': 'GitHubBranchName',
-                        'ParameterValue': os.getenv('GITHUB_BRANCH_NAME', 'master')
+                        'ParameterValue': os.getenv('GITHUB_BRANCH_NAME', 'main')
                     },{
                         'ParameterKey': 'WebStackName',
                         'ParameterValue': os.getenv('WEB_STACK_NAME', app_name + '-web')

@@ -85,7 +85,7 @@ export GITHUB_USERNAME=your_github_username
 # optionally, if you changed the repo name or branch name, uncomment
 #and edit these defaults:
 #export GITHUB_REPO_NAME=aws-cli-demo
-#export GITHUB_BRANCH_NAME=master
+#export GITHUB_BRANCH_NAME=main
 ```
 
 ## Installation
@@ -114,7 +114,7 @@ Creating bucket builds-a4tp-us-east-1-131250507245 to hold builds
 Zipping and uploading lambda functions to s3://builds-a4tp-us-east-1-131250507245/Lambdas.zip
 Creating stack a4tp-ci
 CI stack successfully created
-Deploying code from https://github.com/mockfish/aws-ci-redemo/tree/master
+Deploying code from https://github.com/mockfish/aws-ci-redemo/tree/main
 Visit https://console.aws.amazon.com/codepipeline/home?region=us-east-1#/view/a4tp-Pipeline to view pipeline state
 Waiting for stack a4tp-web to appear...
 web stack successfully deployd
@@ -205,9 +205,9 @@ Then the "CI" stack is built. It takes about 75 seconds for
 CloudFormation to create the VPC and its trimmings (subnet, gateway,
 etc.) together with a CodePipeline workflow. That workflow has three
 stages, which run once when they are first created, then on every
-subsequent push to the Github `master` branch:
+subsequent push to the Github `main` branch:
 
-- The Source stage pulls the latest `master` code from Github.
+- The Source stage pulls the latest `main` code from Github.
 
 - The Build stage runs a Lambda function to perform a "build" of that
   code. We're building static pages at the moment, so the "build" is

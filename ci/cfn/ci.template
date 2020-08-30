@@ -58,7 +58,7 @@ Parameters:
 
   GitHubBranchName:
     Type: String
-    Default: master
+    Default: main
     Description: Name of the branch that should be deployed.
 
   KeyName:
